@@ -84,6 +84,12 @@
 // From module: Part identification macros
 #include <parts.h>
 
+// From module: RTC - Real Time Clock
+#include <rtc.h>
+
+// From module: RTT - Real Time Timer
+#include <rtt.h>
+
 // From module: SAM FPU driver
 #include <fpu.h>
 
@@ -92,6 +98,10 @@
 
 // From module: SPI - Serial Peripheral Interface
 #include <spi.h>
+
+// From module: Sleep manager - SAM implementation
+#include <sam/sleepmgr.h>
+#include <sleepmgr.h>
 
 // From module: System Clock Control - SAME70 implementation
 #include <sysclk.h>
