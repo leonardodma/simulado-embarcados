@@ -4,60 +4,42 @@
 #include "gfx_mono_text.h"
 #include "sysfont.h"
 
-// LED PLACA
-#define LED_PLACA_PIO           PIOC                 // periferico que controla o LED
-#define LED_PLACA_PIO_ID        12                  // ID do periférico PIOC (controla LED)
-#define LED_PLACA_PIO_IDX       8                    // ID do LED no PIO
-#define LED_PLACA_PIO_IDX_MASK  (1 << LED_PLACA_PIO_IDX)   // Mascara para CONTROLARMOS o LED
+#define LED_PIO_ID_1 ID_PIOA
+#define LED_PIO_1 PIOA
+#define LED_IDX_1 0
+#define LED_IDX_MASK_1 (1 << LED_IDX_1)
 
-// LED 1
-#define LED1_PIO                PIOA
-#define LED1_PIO_ID             ID_PIOA
-#define LED1_IDX                0
-#define LED1_IDX_MASK           (1 << LED1_IDX)
+#define LED_PIO_2       PIOC
+#define LED_PIO_ID_2    ID_PIOC
+#define LED_IDX_2       30
+#define LED_IDX_MASK_2  (1u << LED_IDX_2)
 
-// LED 2
-#define LED2_PIO                PIOC
-#define LED2_PIO_ID             ID_PIOC
-#define LED2_IDX                30
-#define LED2_IDX_MASK           (1 << LED2_IDX)
+#define LED_PIO_ID_3      ID_PIOB
+#define LED_PIO_3         PIOB
+#define LED_IDX_3		2
+#define LED_IDX_MASK_3    (1<<LED_IDX_3)
 
-// LED 3
-#define LED3_PIO                PIOB
-#define LED3_PIO_ID             ID_PIOB
-#define LED3_IDX                2
-#define LED3_IDX_MASK           (1 << LED3_IDX)
+#define BUT_PIO_1 PIOD
+#define BUT_PIO_ID_1 ID_PIOD
+#define BUT_IDX_1 28
+#define BUT_IDX_MASK_1 (1 << BUT_IDX_1)
 
-// Botao 1
-#define BUT_PIO PIOD
-#define BUT_PIO_ID ID_PIOD
-#define BUT_IDX 28
-#define BUT_IDX_MASK (1 << BUT_IDX)
-#define BUT_PIO_PIN_MASK
+#define BUT_PIO_2 PIOC
+#define BUT_PIO_ID_2 ID_PIOC
+#define BUT_IDX_2 31
+#define BUT_IDX_MASK_2 (1 << BUT_IDX_2)
 
-// Botao 1
-#define BUT1_PIO PIOD
-#define BUT1_PIO_ID ID_PIOD
-#define BUT1_IDX 28
-#define BUT1_IDX_MASK (1 << BUT1_IDX)
-#define BUT1_PIO_PIN_MASK
+#define BUT_PIO_3 PIOA
+#define BUT_PIO_ID_3 ID_PIOA
+#define BUT_IDX_3 19
+#define BUT_IDX_MASK_3 (1 << BUT_IDX_3)
 
-// Botao 2
-#define BUT2_PIO PIOC
-#define BUT2_PIO_ID ID_PIOC
-#define BUT2_IDX 31
-#define BUT2_IDX_MASK (1 << BUT2_IDX)
-#define BUT2_PIO_PIN_MASK
-
-// Botao 3
-#define BUT3_PIO PIOA
-#define BUT3_PIO_ID ID_PIOA
-#define BUT3_IDX 19
-#define BUT3_IDX_MASK (1 << BUT3_IDX)
-#define BUT3_PIO_PIN_MASK
-
-#define HEIGHT        5
-#define MAX_WIDTH     130
+volatile char flag_rtc = 0;
+volatile char flag_tick_rtc = 0;
+volatile char flag_tc = 0;
+void Button1_Handler();
+void Button2_Handler();
+void Button3_Handler();
 
 typedef struct  {
 	uint32_t year;
@@ -68,209 +50,15 @@ typedef struct  {
 	uint32_t minute;
 	uint32_t second;
 } calendar;
-
-#define PIO_IT_EDGE (1u << 6) /*  Interrupt Edge detection is active. */
-
-/************************************************************************/
-/* variaveis globais                                                    */
-/************************************************************************/
-/* flags */
-volatile char but_1 = 0;
-volatile char but_2 = 0;
-volatile char but_3 = 0;
-
-// Tc
-volatile char flag_tc1 = 0;
-volatile char flag_tc4 = 0;
-volatile char flag_tc7 = 0;
-
-// Rtt
-volatile char f_rtt_alarme = 0;
-
-// Rtc
-volatile char flag_rtc = 0;
-volatile char flag_sec = 0;
-
-uint32_t h, m, s;
-
-/************************************************************************/
-/* Funcoes                                                              */
-/************************************************************************/
-void invert_led(Pio *PIO, const uint32_t MASK, volatile char but_flag){
-	if (but_flag)
-	{
-		if (pio_get(PIO, PIO_DEFAULT, MASK))
-		{
-			pio_clear(PIO, MASK);
-		}
-		else
-		{
-			pio_set(PIO, MASK);
-		}
-	}
-	else{
-		pmc_sleep(SAM_PM_SMODE_SLEEP_WFI);
+void pisca_led_3(int n, int t){
+	for (int i=0;i<n;i++){
+		pio_clear(LED_PIO_3, LED_IDX_MASK_3);
+		delay_ms(t);
+		pio_set(LED_PIO_3, LED_IDX_MASK_3);
+		delay_ms(t);
 	}
 }
-
-void pisca_led(Pio *PIO, const uint32_t MASK){
-	pio_clear(PIO, MASK);
-	delay_ms(2000);
-	pio_set(PIO, MASK);
-}
-/************************************************************************/
-/* handler / callbacks                                                  */
-/************************************************************************/
-void but_callback(void)
-{
-	// PINO == 0 --> Borda de descida
-	but_1 = !but_1;
-}
-
-void but_callback_2(void)
-{
-	// PINO == 0 --> Borda de descida
-	but_2 = !but_2;
-}
-
-void but_callback_3(void)
-{
-	// PINO == 0 --> Borda de descida
-	but_3 = !but_3;
-}
-
-void TC1_Handler(void){
-	volatile uint32_t ul_dummy;
-
-	// Devemos indicar ao TC que a interrupção foi satisfeita.
-	ul_dummy = tc_get_status(TC0, 1);
-
-	/* Avoid compiler warning */
-	UNUSED(ul_dummy);
-
-	/** Muda o estado do LED */
-	flag_tc1 = 1;
-}
-
-void TC4_Handler(void){
-	volatile uint32_t ul_dummy;
-
-	// Devemos indicar ao TC que a interrupção foi satisfeita.
-	ul_dummy = tc_get_status(TC1, 1);
-
-	/* Avoid compiler warning */
-	UNUSED(ul_dummy);
-
-	/** Muda o estado do LED */
-	flag_tc4 = 1;
-}
-
-void TC7_Handler(void){
-	volatile uint32_t ul_dummy;
-
-	// Devemos indicar ao TC que a interrupção foi satisfeita.
-	ul_dummy = tc_get_status(TC2, 1);
-
-	/* Avoid compiler warning */
-	UNUSED(ul_dummy);
-
-	/** Muda o estado do LED */
-	flag_tc7 = 1;
-}
-
-void RTT_Handler(void)
-{
-	uint32_t ul_status;
-
-	/* Get RTT status - ACK */
-	ul_status = rtt_get_status(RTT);
-
-	/* IRQ due to Time has changed */
-	if ((ul_status & RTT_SR_RTTINC) == RTT_SR_RTTINC) {
-		delay_s(5);
-	}
-
-	/* IRQ due to Alarm */
-	if ((ul_status & RTT_SR_ALMS) == RTT_SR_ALMS) {
-		f_rtt_alarme = 1;                  // flag RTT alarme
-	}
-}
-
-void RTC_Handler(void)
-{
-	uint32_t ul_status = rtc_get_status(RTC);
-
-	/* seccond tick	*/
-	if ((ul_status & RTC_SR_SEC) == RTC_SR_SEC) {
-		flag_sec = 1; 
-	}
-	
-	/* Time or date alarm */
-	if ((ul_status & RTC_SR_ALARM) == RTC_SR_ALARM) {
-		flag_rtc = 1;
-	}
-	
-	rtc_clear_status(RTC, RTC_SCCR_SECCLR);
-	rtc_clear_status(RTC, RTC_SCCR_ALRCLR);
-	rtc_clear_status(RTC, RTC_SCCR_ACKCLR);
-	rtc_clear_status(RTC, RTC_SCCR_TIMCLR);
-	rtc_clear_status(RTC, RTC_SCCR_CALCLR);
-	rtc_clear_status(RTC, RTC_SCCR_TDERRCLR);
-}
-
-/************************************************************************/
-/* Inits                                                                */
-/************************************************************************/
-void TC_init(Tc * TC, int ID_TC, int TC_CHANNEL, int freq){
-	uint32_t ul_div;
-	uint32_t ul_tcclks;
-	uint32_t ul_sysclk = sysclk_get_cpu_hz();
-
-	/* Configura o PMC */
-	/* O TimerCounter é meio confuso
-	o uC possui 3 TCs, cada TC possui 3 canais
-	TC0 : ID_TC0, ID_TC1, ID_TC2
-	TC1 : ID_TC3, ID_TC4, ID_TC5
-	TC2 : ID_TC6, ID_TC7, ID_TC8
-	*/
-	pmc_enable_periph_clk(ID_TC);
-
-	/** Configura o TC para operar em  freq hz e interrupçcão no RC compare */
-	tc_find_mck_divisor(freq, ul_sysclk, &ul_div, &ul_tcclks, ul_sysclk);
-	tc_init(TC, TC_CHANNEL, ul_tcclks | TC_CMR_CPCTRG);
-	tc_write_rc(TC, TC_CHANNEL, (ul_sysclk / ul_div) / freq);
-
-	/* Configura e ativa interrupçcão no TC canal 0 */
-	/* Interrupção no C */
-	NVIC_SetPriority(ID_TC, 4);
-	NVIC_EnableIRQ((IRQn_Type) ID_TC);
-	tc_enable_interrupt(TC, TC_CHANNEL, TC_IER_CPCS);
-
-	/* Inicializa o canal 0 do TC */
-	tc_start(TC, TC_CHANNEL);
-}
-
-static void RTT_init(uint16_t pllPreScale, uint32_t IrqNPulses)
-{
-	uint32_t ul_previous_time;
-
-	/* Configure RTT for a 1 second tick interrupt */
-	rtt_sel_source(RTT, false);
-	rtt_init(RTT, pllPreScale);
-	
-	ul_previous_time = rtt_read_timer_value(RTT);
-	while (ul_previous_time == rtt_read_timer_value(RTT));
-	
-	rtt_write_alarm_time(RTT, IrqNPulses+ul_previous_time);
-
-	/* Enable RTT interrupt */
-	NVIC_DisableIRQ(RTT_IRQn);
-	NVIC_ClearPendingIRQ(RTT_IRQn);
-	NVIC_SetPriority(RTT_IRQn, 4);
-	NVIC_EnableIRQ(RTT_IRQn);
-	rtt_enable_interrupt(RTT, RTT_MR_ALMIEN );
-}
-
+//inits:
 void RTC_init(Rtc *rtc, uint32_t id_rtc, calendar t, uint32_t irq_type){
 	/* Configura o PMC */
 	pmc_enable_periph_clk(ID_RTC);
@@ -291,105 +79,191 @@ void RTC_init(Rtc *rtc, uint32_t id_rtc, calendar t, uint32_t irq_type){
 	/* Ativa interrupcao via alarme */
 	rtc_enable_interrupt(rtc,  irq_type);
 }
-
-void LED_init(int estado, Pio *p_pio ,uint32_t id, uint32_t mask ){
-	pmc_enable_periph_clk(id);
-	pio_set_output(p_pio, mask, estado, 0, 0);
+void LED_init(int estado){
+	pmc_enable_periph_clk(LED_PIO_ID_1);
+	pio_set_output(LED_PIO_1, LED_IDX_MASK_1, estado, 0, 0); //3o argumento fala como incializar o led, 0 eh ligado!!!!!!!!!!!
+	pmc_enable_periph_clk(LED_PIO_ID_2);
+	pio_set_output(LED_PIO_2, LED_IDX_MASK_2, estado, 0, 0);
+	pmc_enable_periph_clk(LED_PIO_ID_3);
+	pio_set_output(LED_PIO_3, LED_IDX_MASK_3, estado, 0, 0);
 };
 
-//inicializa botoes
-void BUT_init( Pio *p_pio ,uint32_t id, uint32_t mask, void *p_handler, uint32_t p_edge){
+void BUT_init(void)
+{
+
 	// Inicializa clock do perif?rico PIO responsavel pelo botao
-	pmc_enable_periph_clk(id);
+	pmc_enable_periph_clk(BUT_PIO_ID_1);
+	pmc_enable_periph_clk(BUT_PIO_ID_2);
+	pmc_enable_periph_clk(BUT_PIO_ID_3);
 
 	// Configura PIO para lidar com o pino do bot?o como entrada
 	// com pull-up
-	pio_configure(p_pio, PIO_INPUT, mask, PIO_PULLUP);
-	pio_configure(p_pio, PIO_INPUT, mask, PIO_PULLUP | PIO_DEBOUNCE);
-	pio_set_debounce_filter(p_pio, mask, 60);
+	pio_configure(BUT_PIO_1, PIO_INPUT, BUT_IDX_MASK_1, PIO_PULLUP | PIO_DEBOUNCE);
+	pio_configure(BUT_PIO_2, PIO_INPUT, BUT_IDX_MASK_2, PIO_PULLUP| PIO_DEBOUNCE);
+	pio_configure(BUT_PIO_3, PIO_INPUT, BUT_IDX_MASK_3, PIO_PULLUP| PIO_DEBOUNCE);
+
 
 	// Configura interrup??o no pino referente ao botao e associa
 	// fun??o de callback caso uma interrup??o for gerada
 	// a fun??o de callback ? a: but_callback()
-	pio_handler_set(p_pio,
-	id,
-	mask,
-	p_edge,
-	p_handler);
+	pio_handler_set(BUT_PIO_1,
+	BUT_PIO_ID_1,
+	BUT_IDX_MASK_1,
+	PIO_IT_FALL_EDGE,
+	Button1_Handler);
+	
+	pio_handler_set(BUT_PIO_2,
+	BUT_PIO_ID_2,
+	BUT_IDX_MASK_2,
+	PIO_IT_FALL_EDGE,
+	Button2_Handler);
+	
+	pio_handler_set(BUT_PIO_3,
+	BUT_PIO_ID_3,
+	BUT_IDX_MASK_3,
+	PIO_IT_FALL_EDGE,
+	Button3_Handler);
 
 	// Ativa interrup??o
-	pio_enable_interrupt(p_pio, mask);
+	pio_enable_interrupt(BUT_PIO_1, BUT_IDX_MASK_1);
+	pio_enable_interrupt(BUT_PIO_2, BUT_IDX_MASK_2);
+	pio_enable_interrupt(BUT_PIO_3, BUT_IDX_MASK_3);
 
 	// Configura NVIC para receber interrupcoes do PIO do botao
 	// com prioridade 4 (quanto mais pr?ximo de 0 maior)
-	NVIC_EnableIRQ(id);
-	NVIC_SetPriority(id, 4); // Prioridade 4
+	NVIC_EnableIRQ(BUT_PIO_ID_1);
+	NVIC_SetPriority(BUT_PIO_ID_1, 4); // Prioridade 4
+	NVIC_EnableIRQ(BUT_PIO_ID_2);
+	NVIC_SetPriority(BUT_PIO_ID_2, 4);
+	NVIC_EnableIRQ(BUT_PIO_ID_3);
+	NVIC_SetPriority(BUT_PIO_ID_3, 4);
 }
 
-void io_init(void)
-{	
-	board_init();
-	sysclk_init();
-	/* Disable the watchdog */
-	WDT->WDT_MR = WDT_MR_WDDIS;
-	delay_init();
-	// Init OLED
-	gfx_mono_ssd1306_init();
+//HANDLERS:
+volatile int but_flag_1=0;
+volatile int but_flag_2=0;
+volatile int but_flag_3=0;
+void Button1_Handler(void){
+	but_flag_1 = 1;
+}
+void Button2_Handler(void){
+	but_flag_2 = 1;
+}
+void Button3_Handler(void){
+	but_flag_3 = 1;
+}
+
+void RTC_Handler(void)
+{
+	uint32_t ul_status = rtc_get_status(RTC);
+
+	/* seccond tick	*/
+	if ((ul_status & RTC_SR_SEC) == RTC_SR_SEC) {
+		flag_tick_rtc=1;
+	}
 	
-	/* Inicializa Leds */
-	LED_init(1, LED1_PIO, LED1_PIO_ID, LED1_IDX_MASK);
-	LED_init(1, LED2_PIO, LED2_PIO_ID, LED2_IDX_MASK);
-	LED_init(1, LED3_PIO, LED3_PIO_ID, LED3_IDX_MASK);
-
-	//Inicializa botoes
-	BUT_init(BUT1_PIO, BUT1_PIO_ID, BUT1_IDX_MASK, but_callback, PIO_IT_RISE_EDGE);
-	BUT_init(BUT2_PIO, BUT2_PIO_ID, BUT2_IDX_MASK, but_callback_2, PIO_IT_FALL_EDGE);
-	BUT_init(BUT3_PIO, BUT3_PIO_ID, BUT3_IDX_MASK, but_callback_3, PIO_IT_RISE_EDGE);
+	/* Time or date alarm */
+	if ((ul_status & RTC_SR_ALARM) == RTC_SR_ALARM) {
+		flag_rtc = 1;
+	}
+	
+	rtc_clear_status(RTC, RTC_SCCR_SECCLR);
+	rtc_clear_status(RTC, RTC_SCCR_ALRCLR);
+	rtc_clear_status(RTC, RTC_SCCR_ACKCLR);
+	rtc_clear_status(RTC, RTC_SCCR_TIMCLR);
+	rtc_clear_status(RTC, RTC_SCCR_CALCLR);
+	rtc_clear_status(RTC, RTC_SCCR_TDERRCLR);
 }
 
 
-/************************************************************************/
-/* Main                                                                 */
-/************************************************************************/
 int main (void)
 {
-	io_init();
-	
-	// Configura TC
-	TC_init(TC0, ID_TC1, 1, 1);
+	board_init();
+	sysclk_init();
+	delay_init();
 
-	/** Configura RTC */
+	// Init OLED
+	gfx_mono_ssd1306_init();
+	WDT->WDT_MR = WDT_MR_WDDIS;
+	
+	/* Configura Leds */
+	LED_init(1);
+
+	/* Configura os bot?es */
+	BUT_init();
+	
+	// Escreve na tela um circulo e um texto
+	//gfx_mono_draw_filled_circle(20, 16, 16, GFX_PIXEL_SET, GFX_WHOLE);
+	//gfx_mono_draw_string("mundo", 50,16, &sysfont);
 	calendar rtc_initial = {2018, 3, 19, 12, 15, 45 ,1};
 	RTC_init(RTC, ID_RTC, rtc_initial, RTC_IER_ALREN | RTC_IER_SECEN);
-  
-	char buffer [50];
+	int sec_cro=0;
+	int min_cro=0;
+	int contagem=0;
+	but_flag_1=0;
+	but_flag_2=0;
+	but_flag_3=0;
 	/* Insert application code here, after the board has been initialized. */
 	while(1) {
-		if (flag_sec){
-			uint32_t h, m, s;
-			rtc_get_time(RTC,&h,&m,&s);
-			if (s < 10)
-			{
-				sprintf(buffer, "%lu:%lu:0%lu", h, m, s);
-				gfx_mono_draw_string(buffer, 35, 2, &sysfont);
-
-			}
-			else
-			{
-				sprintf(buffer, "%lu:%lu:%lu", h, m, s);
-				gfx_mono_draw_string(buffer, 35, 2, &sysfont);
-			}
-			
-			flag_sec= 0;
+		if (flag_tick_rtc==1){
+			uint32_t hr;
+			uint32_t min;
+			uint32_t sec;
+			rtc_get_time(RTC, &hr, &min, &sec);
+			char buffer1[32];
+			char buffer2[32];
+			sprintf(buffer1, "%.2d : %.2d : %.2d", hr, min, sec);
+			sprintf(buffer2, "%.2d : %.2d", min_cro, sec_cro);
+			gfx_mono_draw_string(buffer1, 0,0, &sysfont);
+			gfx_mono_draw_string(buffer2, 0,15, &sysfont);
+			flag_tick_rtc=0;
 		}
 		
-		if (flag_tc1)
-		{
-			invert_led(LED3_PIO, LED3_IDX_MASK, but_3);
-			flag_tc1 = 0;
+		
+		if(contagem==1){
+			pio_clear(LED_PIO_1,LED_IDX_MASK_1);
+			}else{
+			pio_set(LED_PIO_1,LED_IDX_MASK_1);
 		}
-				
-		pmc_sleep(SAM_PM_SMODE_SLEEP_WFI);
+		
+		if (but_flag_1==1){
+			min_cro+=1;
+			but_flag_1=0;
+		}
+		if(but_flag_2==1){
+			sec_cro+=1;
+			but_flag_2=0;
+		}
+		if (but_flag_3==1){
+			contagem=1;
+			but_flag_3=0;
+			int hr;
+			int min;
+			int sec;
+			rtc_get_time(RTC, &hr, &min, &sec);
+			
+			if (sec_cro+sec<=59){
+				// configura alarme do RTC
+				rtc_set_date_alarm(RTC, 1, rtc_initial.month, 1, rtc_initial.day);
+				rtc_set_time_alarm(RTC, 1, hr, 1, min+min_cro, 1, sec + sec_cro);
+				}else{
+				rtc_set_date_alarm(RTC, 1, rtc_initial.month, 1, rtc_initial.day);
+			rtc_set_time_alarm(RTC, 1, hr, 1, min+1+min_cro, 1, sec+sec_cro-60);}
+			
+			flag_rtc=0;
+			
+		}
+		
+		if(flag_rtc==1){
+			pio_set(LED_PIO_1,LED_IDX_MASK_1);
+			contagem=0;
+			sec_cro=0;
+			min_cro=0;
+			flag_rtc=0;
+			pisca_led_3(10,300);
+		}
+		//pmc_sleep(SAM_PM_SMODE_SLEEP_WFI);
+		
 
 	}
 }
